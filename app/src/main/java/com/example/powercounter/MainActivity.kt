@@ -1,5 +1,6 @@
 package com.example.powercounter
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -37,62 +38,149 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.powercounter.ui.theme.PowerCounterTheme
-import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
-// 1. Новая, расширенная палитра приглушенных цветов (18 вариантов)
-val cardColors = listOf(
-    // Основные
-    Color(0x00000000), // Черный (по умолчанию)
-    Color(0xFF5f798d), // Пыльный синий
-    Color(0xFF667d60), // Болотный зеленый
-    Color(0xFF8d6b62), // Теплый терракотовый
-    Color(0xFF8d6e89), // Пыльный лиловый
-    Color(0xFF9d875c), // Приглушенный охристый
-    Color(0xFF5a6e8a), // Глубокий серо-синий
-    Color(0xFFa1a1a1), // Светло-серый
-    Color(0xFF7a6c5d), // Кофейный
-    Color(0xFF4a5e5a), // Темно-бирюзовый
-    Color(0xFF9a7e6e), // Розово-коричневый
-    Color(0xFF635f6d), // Шиферный
-    Color(0xFFb0a38f), // Бежевый
-    Color(0xFF7e8a97), // Прохладный стальной
-    Color(0xFF9c8c82), // Пепельно-розовый
-    Color(0xFF566573), // Графитовый
-    Color(0xFFa49e97), // Каменный
-    Color(0xFF8c9288)  // Шалфейный
-)
+// --- 1. НАСТРОЙКА DATASTORE ---
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "munchkin_settings")
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent {
-            PowerCounterTheme {
-                MunchkinPowerCounter()
-            }
-        }
-    }
-}
-
+// --- 2. МОДЕЛЬ ДАННЫХ ---
+@Serializable
 data class Player(
     val id: Int,
     val name: String,
     val level: Int = 1,
     val gear: Int = 0,
-    val cardColorIndex: Int = 0 // Индекс цвета в списке cardColors
+    val cardColorIndex: Int = 0
 ) {
     val totalPower: Int
         get() = level + gear
-    val color: Color
-        get() = cardColors[cardColorIndex]
 }
 
-@Composable
-fun MunchkinPowerCounter(modifier: Modifier = Modifier) {
-    var players by remember { mutableStateOf(listOf(Player(id = 1, name = "Игрок 1"))) }
+val cardColors = listOf(
+    Color(0xFF6c757d), Color(0xFF5f798d), Color(0xFF667d60),
+    Color(0xFF8d6b62), Color(0xFF8d6e89), Color(0xFF9d875c),
+    Color(0xFF5a6e8a), Color(0xFFa1a1a1), Color(0xFF7a6c5d),
+    Color(0xFF4a5e5a), Color(0xFF9a7e6e), Color(0xFF635f6d),
+    Color(0xFFb0a38f), Color(0xFF7e8a97), Color(0xFF9c8c82),
+    Color(0xFF566573), Color(0xFFa49e97), Color(0xFF8c9288)
+)
 
-    Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
+// --- 3. РЕПОЗИТОРИЙ ---
+class PlayerRepository(private val dataStore: DataStore<Preferences>) {
+    private val playersKey = stringPreferencesKey("players_list")
+
+    val playersFlow: StateFlow<List<Player>> = dataStore.data
+        .map { preferences ->
+            val jsonString = preferences[playersKey]
+            if (jsonString != null) {
+                Json.decodeFromString<List<Player>>(jsonString)
+            } else {
+                listOf(Player(id = 1, name = "Игрок 1"))
+            }
+        }.stateIn(
+            scope = CoroutineScope(Dispatchers.IO),
+            started = SharingStarted.Eagerly,
+            initialValue = listOf(Player(id = 1, name = "Игрок 1"))
+        )
+
+    suspend fun savePlayers(players: List<Player>) {
+        val jsonString = Json.encodeToString(players)
+        dataStore.edit { preferences ->
+            preferences[playersKey] = jsonString
+        }
+    }
+}
+
+// --- 4. VIEWMODEL ---
+class MunchkinViewModel(private val repository: PlayerRepository) : ViewModel() {
+    val playersState: StateFlow<List<Player>> = repository.playersFlow
+
+    private fun updatePlayers(updatedPlayers: List<Player>) {
+        viewModelScope.launch {
+            repository.savePlayers(updatedPlayers)
+        }
+    }
+
+    fun addPlayer() {
+        val currentPlayers = playersState.value
+        if (currentPlayers.size < 6) {
+            val newId = (currentPlayers.maxOfOrNull { it.id } ?: 0) + 1
+            val newPlayer = Player(id = newId, name = "Игрок ${currentPlayers.size + 1}", cardColorIndex = 0)
+            updatePlayers(currentPlayers + newPlayer)
+        }
+    }
+
+    fun resetPlayers() {
+        updatePlayers(listOf(Player(id = 1, name = "Игрок 1")))
+    }
+
+    fun deletePlayer(player: Player) {
+        val currentPlayers = playersState.value
+        if (currentPlayers.size > 1) {
+            updatePlayers(currentPlayers.filter { it.id != player.id })
+        }
+    }
+
+    fun updatePlayer(updatedPlayer: Player) {
+        val currentPlayers = playersState.value
+        val updatedList = currentPlayers.map {
+            if (it.id == updatedPlayer.id) updatedPlayer else it
+        }
+        updatePlayers(updatedList)
+    }
+}
+
+class MunchkinViewModelFactory(private val repository: PlayerRepository) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(MunchkinViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return MunchkinViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+// --- ACTIVITY ---
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            val repository = PlayerRepository(dataStore = applicationContext.dataStore)
+            val viewModel: MunchkinViewModel = viewModel(factory = MunchkinViewModelFactory(repository))
+
+            PowerCounterTheme {
+                MunchkinPowerCounter(viewModel)
+            }
+        }
+    }
+}
+
+// --- UI ---
+@Composable
+fun MunchkinPowerCounter(viewModel: MunchkinViewModel) {
+    val players by viewModel.playersState.collectAsState()
+
+    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
@@ -100,49 +188,21 @@ fun MunchkinPowerCounter(modifier: Modifier = Modifier) {
         ) {
             TopAppBar(
                 players = players,
-                onAddPlayer = {
-                    if (players.size < 6) {
-                        val newId = (players.maxOfOrNull { it.id } ?: 0) + 1
-                        // 2. Устанавливаем серый цвет по умолчанию (индекс 0)
-                        players = players + Player(id = newId, name = "Игрок ${players.size + 1}", cardColorIndex = 0)
-                    }
-                },
-                onReset = {
-                    players = listOf(Player(id = 1, name = "Игрок 1"))
-                }
+                onAddPlayer = { viewModel.addPlayer() },
+                onReset = { viewModel.resetPlayers() }
             )
             LazyColumn(
                 contentPadding = PaddingValues(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(1.dp) // Уменьшаем расстояние между карточками
+                verticalArrangement = Arrangement.spacedBy(1.dp)
             ) {
                 items(players, key = { it.id }) { player ->
                     PlayerCard(
                         player = player,
-                        onLevelChange = { newLevel ->
-                            players = players.map {
-                                if (it.id == player.id) it.copy(level = newLevel) else it
-                            }
-                        },
-                        onGearChange = { newGear ->
-                            players = players.map {
-                                if (it.id == player.id) it.copy(gear = newGear) else it
-                            }
-                        },
-                        onNameChange = { newName ->
-                            players = players.map {
-                                if (it.id == player.id) it.copy(name = newName) else it
-                            }
-                        },
-                        onDeletePlayer = {
-                            if (players.size > 1) {
-                                players = players.filter { it.id != player.id }
-                            }
-                        },
-                        onChangeColor = { newColorIndex ->
-                            players = players.map {
-                                if (it.id == player.id) it.copy(cardColorIndex = newColorIndex) else it
-                            }
-                        }
+                        onLevelChange = { newLevel -> viewModel.updatePlayer(player.copy(level = newLevel)) },
+                        onGearChange = { newGear -> viewModel.updatePlayer(player.copy(gear = newGear)) },
+                        onNameChange = { newName -> viewModel.updatePlayer(player.copy(name = newName)) },
+                        onDeletePlayer = { viewModel.deletePlayer(player) },
+                        onChangeColor = { newColorIndex -> viewModel.updatePlayer(player.copy(cardColorIndex = newColorIndex)) }
                     )
                 }
             }
@@ -155,7 +215,7 @@ fun TopAppBar(players: List<Player>, onAddPlayer: () -> Unit, onReset: () -> Uni
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp), // Уменьшил вертикальный отступ
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -199,7 +259,7 @@ fun PlayerCard(
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = player.color)
+        colors = CardDefaults.cardColors(containerColor = cardColors[player.cardColorIndex])
     ) {
         Column(
             modifier = Modifier.padding(vertical = 4.dp, horizontal = 12.dp)
@@ -215,7 +275,7 @@ fun PlayerCard(
                 Box(modifier = Modifier.weight(1f)) {
                     if (isEditingName) {
                         LaunchedEffect(Unit) {
-                            tempName = "" // Очищаем поле при входе в режим редактирования
+                            tempName = ""
                             focusRequester.requestFocus()
                         }
                         BasicTextField(
@@ -316,7 +376,6 @@ fun Counter(
         Text(
             "$label: $value",
             style = MaterialTheme.typography.bodyLarge,
-            // modifier = Modifier.width(90.dp), // <<<--- ЭТА СТРОКА УДАЛЕНА
             textAlign = TextAlign.Start
         )
     }
@@ -329,8 +388,6 @@ fun ColorPickerDialog(onColorSelected: (Int) -> Unit, onDismiss: () -> Unit) {
         Card {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Выберите цвет", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 16.dp))
-
-                // Разбиваем список цветов на чанки (ряды) по 6 элементов
                 cardColors.chunked(6).forEach { rowColors ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -340,7 +397,7 @@ fun ColorPickerDialog(onColorSelected: (Int) -> Unit, onDismiss: () -> Unit) {
                             val index = cardColors.indexOf(color)
                             Box(
                                 modifier = Modifier
-                                    .padding(4.dp) // Добавляем отступ вокруг каждого кружка
+                                    .padding(4.dp)
                                     .size(40.dp)
                                     .clip(CircleShape)
                                     .background(color)
@@ -355,21 +412,21 @@ fun ColorPickerDialog(onColorSelected: (Int) -> Unit, onDismiss: () -> Unit) {
     }
 }
 
-
 @Preview(showBackground = true)
 @Composable
 fun MunchkinPowerCounterPreview() {
     PowerCounterTheme {
-        var players by remember {
-            mutableStateOf(
-                (1..6).map { Player(id = it, name = "Игрок $it", level = it, gear = it * 2, cardColorIndex = it - 1) }
-            )
-        }
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            TopAppBar(players = players, onAddPlayer = {}, onReset = {})
-            players.forEach { player ->
-                PlayerCard(player = player, onLevelChange = {}, onGearChange = {}, onNameChange = {}, onDeletePlayer = {}, onChangeColor = {})
-            }
+            val player = Player(1, "Игрок 1", 5, 10, 0)
+            TopAppBar(players = listOf(player), onAddPlayer = {}, onReset = {})
+            PlayerCard(
+                player = player,
+                onLevelChange = {},
+                onGearChange = {},
+                onNameChange = {},
+                onDeletePlayer = {},
+                onChangeColor = {}
+            )
         }
     }
 }
