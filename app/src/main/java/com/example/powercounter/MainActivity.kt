@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -323,8 +324,19 @@ fun PlayerCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(horizontalAlignment = Alignment.Start) {
-                    Counter(label = "Уровень", value = player.level, onValueChange = { onLevelChange(it) }, valueRange = 1..10)
-                    Counter(label = "Шмотки", value = player.gear, onValueChange = { onGearChange(it) })
+                    Counter(
+                        label = "Уровень",
+                        value = player.level,
+                        onValueChange = { onLevelChange(it) },
+                        valueRange = 1..10,
+                        isEditable = false // Уровень не редактируем вручную
+                    )
+                    Counter(
+                        label = "Шмотки",
+                        value = player.gear,
+                        onValueChange = { onGearChange(it) },
+                        isEditable = true // Шмотки можно редактировать
+                    )
                 }
                 Box(
                     modifier = Modifier.weight(1f),
@@ -345,8 +357,14 @@ fun Counter(
     label: String,
     value: Int,
     onValueChange: (Int) -> Unit,
-    valueRange: IntRange? = null
+    valueRange: IntRange? = null,
+    isEditable: Boolean = false
 ) {
+    var isEditing by remember { mutableStateOf(false) }
+    var tempValue by remember(value) { mutableStateOf(value.toString()) }
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.height(36.dp)
@@ -373,13 +391,48 @@ fun Counter(
             Text("+")
         }
         Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            "$label: $value",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Start
-        )
+
+        Box(
+            modifier = Modifier.clickable(enabled = isEditable) {
+                isEditing = true
+            }
+        ) {
+            if (isEditing) {
+                // Очищаем поле при входе в режим редактирования
+                LaunchedEffect(Unit) {
+                    tempValue = ""
+                    focusRequester.requestFocus()
+                }
+                BasicTextField(
+                    value = tempValue,
+                    onValueChange = { tempValue = it.filter { char -> char.isDigit() } },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(textAlign = TextAlign.Start),
+                    modifier = Modifier
+                        .width(90.dp)
+                        .focusRequester(focusRequester),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        val newValue = tempValue.toIntOrNull() ?: value
+                        onValueChange(newValue)
+                        isEditing = false
+                        focusManager.clearFocus()
+                    })
+                )
+            } else {
+                Text(
+                    "$label: $value",
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Start
+                )
+            }
+        }
     }
 }
+
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
