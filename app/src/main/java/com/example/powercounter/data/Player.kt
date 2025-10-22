@@ -1,11 +1,8 @@
 package com.example.powercounter.data
 
 import androidx.compose.ui.graphics.Color
-import kotlinx.serialization.Serializable
-
-/**
+import kotlinx.serialization.Serializable/**
  * Model: Определяет структуру данных для игрока.
- * Этот класс является Serializable для сохранения в DataStore.
  */
 @Serializable
 data class Player(
@@ -20,13 +17,37 @@ data class Player(
 }
 
 /**
- * Источник данных для цветов.
+ * Новая, приглушенная и отсортированная по тонам палитра.
+ * Цвета подобраны так, чтобы белый текст хорошо читался.
  */
 val cardColors = listOf(
-    Color(0xFF6c757d), Color(0xFF5f798d), Color(0xFF667d60),
-    Color(0xFF8d6b62), Color(0xFF8d6e89), Color(0xFF9d875c),
-    Color(0xFF5a6e8a), Color(0xFFa1a1a1), Color(0xFF7a6c5d),
-    Color(0xFF4a5e5a), Color(0xFF9a7e6e), Color(0xFF635f6d),
-    Color(0xFFb0a38f), Color(0xFF7e8a97), Color(0xFF9c8c82),
-    Color(0xFF566573), Color(0xFFa49e97), Color(0xFF8c9288)
+    // --- Серые/Нейтральные ---
+    Color(0xFF6A7077), // Спокойный серый (по умолчанию)
+    Color(0xFF53585E), // Темно-серый
+    Color(0xFF7D8C9B), // Пыльный серо-синий
+
+    // --- Синие/Фиолетовые ---
+    Color(0xFF5A7D9A), // Приглушенный синий
+    Color(0xFF6B6A94), // Лавандовый
+    Color(0xFF8E6B8E), // Пыльный фиолетовый
+
+    // --- Зеленые ---
+    Color(0xFF607E6D), // Шалфейный
+    Color(0xFF4C7C75), // Морская пена
+    Color(0xFF7A8C6F), // Оливковый
+
+    // --- Красные/Розовые ---
+    Color(0xFFa26c6c), // Приглушенный красный
+    Color(0xFF9E6B7E), // Пыльная роза
+    Color(0xFFa06d8a), // Лиловый
+
+    // --- Коричневые/Оранжевые ---
+    Color(0xFFa87c5b), // Мягкий оранжевый
+    Color(0xFF7d6c63), // Кофейный
+    Color(0xFF9b8a75), // Песочный
+
+    // --- Другие темные ---
+    Color(0xFF5C6B73), // Шифер
+    Color(0xFF757575), // Теплый серый
+    Color(0xFF8d8d81)  // Хаки
 )

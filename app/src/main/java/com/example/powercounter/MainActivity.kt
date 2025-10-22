@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,18 +46,12 @@ import com.example.powercounter.ui.MunchkinViewModel
 import com.example.powercounter.ui.MunchkinViewModelFactory
 import com.example.powercounter.ui.theme.PowerCounterTheme
 
-
-/**
- * Activity теперь отвечает только за запуск и предоставление зависимостей (Repository).
- */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            // Создаем репозиторий один раз
             val repository = remember { PlayerRepository(applicationContext) }
-            // Создаем ViewModel через фабрику
             val viewModel: MunchkinViewModel = viewModel(factory = MunchkinViewModelFactory(repository))
 
             PowerCounterTheme {
@@ -72,7 +65,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MunchkinPowerCounter(viewModel: MunchkinViewModel) {
-    // View подписывается на состояние из ViewModel
     val players by viewModel.playersState.collectAsState()
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -83,14 +75,12 @@ fun MunchkinPowerCounter(viewModel: MunchkinViewModel) {
         ) {
             TopAppBar(
                 players = players,
-                // View просто сообщает ViewModel о действии пользователя
                 onAddPlayer = { viewModel.addPlayer() },
                 onReset = { viewModel.resetPlayers() }
             )
-            // Corrected Code
             LazyColumn(
                 contentPadding = PaddingValues(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(space = 1.dp, alignment = Alignment.Top)
+                verticalArrangement = Arrangement.spacedBy(1.dp)
             ) {
                 items(players, key = { it.id }) { player ->
                     PlayerCard(
@@ -106,7 +96,6 @@ fun MunchkinPowerCounter(viewModel: MunchkinViewModel) {
         }
     }
 }
-
 
 @Composable
 fun TopAppBar(players: List<Player>, onAddPlayer: () -> Unit, onReset: () -> Unit) {
@@ -330,29 +319,44 @@ fun Counter(
 }
 
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * Новая версия диалога, которая группирует цвета по колонкам.
+ */
 @Composable
 fun ColorPickerDialog(onColorSelected: (Int) -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Card {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Выберите цвет", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 16.dp))
-                cardColors.chunked(6).forEach { rowColors ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        rowColors.forEach { color ->
-                            val index = cardColors.indexOf(color)
-                            Box(
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                                    .clickable { onColorSelected(index) }
-                                    .border(1.dp, Color.White, CircleShape)
-                            )
+
+                // Группируем цвета по 3 в каждой подгруппе (колонке)
+                val groupedByTone = cardColors.chunked(3)
+                // Группируем подгруппы по 6 (для создания рядов)
+                val rows = groupedByTone.chunked(2)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // Создаем 6 колонок
+                    for (i in 0 until 6) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            // В каждой колонке 3 цвета
+                            for (j in 0 until 3) {
+                                val index = j * 6 + i
+                                if (index < cardColors.size) {
+                                    val color = cardColors[index]
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(4.dp)
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(color)
+                                            .clickable { onColorSelected(index) }
+                                            .border(1.dp, Color.White, CircleShape)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -360,6 +364,7 @@ fun ColorPickerDialog(onColorSelected: (Int) -> Unit, onDismiss: () -> Unit) {
         }
     }
 }
+
 
 @Preview(showBackground = true)
 @Composable
