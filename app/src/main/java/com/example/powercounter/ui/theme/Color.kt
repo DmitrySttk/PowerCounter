@@ -2,6 +2,7 @@ package com.example.powercounter.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+// Define your app's colors here
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
 val Pink80 = Color(0xFFEFB8C8)

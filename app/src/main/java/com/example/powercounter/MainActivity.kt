@@ -1,10 +1,10 @@
 package com.example.powercounter
 
-import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,134 +39,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.powercounter.data.Player
+import com.example.powercounter.data.PlayerRepository
+import com.example.powercounter.data.cardColors
+import com.example.powercounter.ui.MunchkinViewModel
+import com.example.powercounter.ui.MunchkinViewModelFactory
 import com.example.powercounter.ui.theme.PowerCounterTheme
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
-// --- 1. НАСТРОЙКА DATASTORE ---
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "munchkin_settings")
 
-// --- 2. МОДЕЛЬ ДАННЫХ ---
-@Serializable
-data class Player(
-    val id: Int,
-    val name: String,
-    val level: Int = 1,
-    val gear: Int = 0,
-    val cardColorIndex: Int = 0
-) {
-    val totalPower: Int
-        get() = level + gear
-}
-
-val cardColors = listOf(
-    Color(0xFF6c757d), Color(0xFF5f798d), Color(0xFF667d60),
-    Color(0xFF8d6b62), Color(0xFF8d6e89), Color(0xFF9d875c),
-    Color(0xFF5a6e8a), Color(0xFFa1a1a1), Color(0xFF7a6c5d),
-    Color(0xFF4a5e5a), Color(0xFF9a7e6e), Color(0xFF635f6d),
-    Color(0xFFb0a38f), Color(0xFF7e8a97), Color(0xFF9c8c82),
-    Color(0xFF566573), Color(0xFFa49e97), Color(0xFF8c9288)
-)
-
-// --- 3. РЕПОЗИТОРИЙ ---
-class PlayerRepository(private val dataStore: DataStore<Preferences>) {
-    private val playersKey = stringPreferencesKey("players_list")
-
-    val playersFlow: StateFlow<List<Player>> = dataStore.data
-        .map { preferences ->
-            val jsonString = preferences[playersKey]
-            if (jsonString != null) {
-                Json.decodeFromString<List<Player>>(jsonString)
-            } else {
-                listOf(Player(id = 1, name = "Игрок 1"))
-            }
-        }.stateIn(
-            scope = CoroutineScope(Dispatchers.IO),
-            started = SharingStarted.Eagerly,
-            initialValue = listOf(Player(id = 1, name = "Игрок 1"))
-        )
-
-    suspend fun savePlayers(players: List<Player>) {
-        val jsonString = Json.encodeToString(players)
-        dataStore.edit { preferences ->
-            preferences[playersKey] = jsonString
-        }
-    }
-}
-
-// --- 4. VIEWMODEL ---
-class MunchkinViewModel(private val repository: PlayerRepository) : ViewModel() {
-    val playersState: StateFlow<List<Player>> = repository.playersFlow
-
-    private fun updatePlayers(updatedPlayers: List<Player>) {
-        viewModelScope.launch {
-            repository.savePlayers(updatedPlayers)
-        }
-    }
-
-    fun addPlayer() {
-        val currentPlayers = playersState.value
-        if (currentPlayers.size < 6) {
-            val newId = (currentPlayers.maxOfOrNull { it.id } ?: 0) + 1
-            val newPlayer = Player(id = newId, name = "Игрок ${currentPlayers.size + 1}", cardColorIndex = 0)
-            updatePlayers(currentPlayers + newPlayer)
-        }
-    }
-
-    fun resetPlayers() {
-        updatePlayers(listOf(Player(id = 1, name = "Игрок 1")))
-    }
-
-    fun deletePlayer(player: Player) {
-        val currentPlayers = playersState.value
-        if (currentPlayers.size > 1) {
-            updatePlayers(currentPlayers.filter { it.id != player.id })
-        }
-    }
-
-    fun updatePlayer(updatedPlayer: Player) {
-        val currentPlayers = playersState.value
-        val updatedList = currentPlayers.map {
-            if (it.id == updatedPlayer.id) updatedPlayer else it
-        }
-        updatePlayers(updatedList)
-    }
-}
-
-class MunchkinViewModelFactory(private val repository: PlayerRepository) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(MunchkinViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return MunchkinViewModel(repository) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
-    }
-}
-
-// --- ACTIVITY ---
+/**
+ * Activity теперь отвечает только за запуск и предоставление зависимостей (Repository).
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val repository = PlayerRepository(dataStore = applicationContext.dataStore)
+            // Создаем репозиторий один раз
+            val repository = remember { PlayerRepository(applicationContext) }
+            // Создаем ViewModel через фабрику
             val viewModel: MunchkinViewModel = viewModel(factory = MunchkinViewModelFactory(repository))
 
             PowerCounterTheme {
@@ -176,9 +68,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// --- UI ---
+// --- UI (VIEW) ---
+
 @Composable
 fun MunchkinPowerCounter(viewModel: MunchkinViewModel) {
+    // View подписывается на состояние из ViewModel
     val players by viewModel.playersState.collectAsState()
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -189,12 +83,14 @@ fun MunchkinPowerCounter(viewModel: MunchkinViewModel) {
         ) {
             TopAppBar(
                 players = players,
+                // View просто сообщает ViewModel о действии пользователя
                 onAddPlayer = { viewModel.addPlayer() },
                 onReset = { viewModel.resetPlayers() }
             )
+            // Corrected Code
             LazyColumn(
                 contentPadding = PaddingValues(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(1.dp)
+                verticalArrangement = Arrangement.spacedBy(space = 1.dp, alignment = Alignment.Top)
             ) {
                 items(players, key = { it.id }) { player ->
                     PlayerCard(
@@ -210,6 +106,7 @@ fun MunchkinPowerCounter(viewModel: MunchkinViewModel) {
         }
     }
 }
+
 
 @Composable
 fun TopAppBar(players: List<Player>, onAddPlayer: () -> Unit, onReset: () -> Unit) {
@@ -329,13 +226,13 @@ fun PlayerCard(
                         value = player.level,
                         onValueChange = { onLevelChange(it) },
                         valueRange = 1..10,
-                        isEditable = false // Уровень не редактируем вручную
+                        isEditable = false
                     )
                     Counter(
                         label = "Шмотки",
                         value = player.gear,
                         onValueChange = { onGearChange(it) },
-                        isEditable = true // Шмотки можно редактировать
+                        isEditable = true
                     )
                 }
                 Box(
@@ -398,7 +295,6 @@ fun Counter(
             }
         ) {
             if (isEditing) {
-                // Очищаем поле при входе в режим редактирования
                 LaunchedEffect(Unit) {
                     tempValue = ""
                     focusRequester.requestFocus()
